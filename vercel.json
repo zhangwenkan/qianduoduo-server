@@ -1,5 +1,7 @@
 {
   "rewrites": [
+    { "source": "/api/fund-search", "destination": "/api/fund-search" },
+    { "source": "/api/fund-detail/:code", "destination": "/api/fund-detail" },
     { "source": "/api/fund-sectors", "destination": "/api/fund-sectors" },
     { "source": "/api/fund-holdings", "destination": "/api/fund-holdings" },
     { "source": "/api", "destination": "/api/index" }
