@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/fund-sectors", "destination": "/api/fund-sectors" },
+    { "source": "/api", "destination": "/api/index" }
+  ]
+}
