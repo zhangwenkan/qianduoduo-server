@@ -149,56 +149,69 @@ app.get('/', (req, res) => {
   res.json({ 
     name: '钱多多 API',
     version: '1.0.0',
-    endpoints: ['/api/fund-sectors', '/api/fund-holdings', '/api/fund-search', '/api/fund-detail']
+    endpoints: ['/api/fund-sectors', '/api/fund-holdings', '/api/fundsearch', '/api/fundgz', '/api/stockquotes', '/api/fundholdings']
   })
 })
 
-app.get('/api/fund-search', async (req, res) => {
-  const { key } = req.query
-  
-  if (!key || key.length < 2) {
-    return res.json({
-      code: 0,
-      message: '获取成功',
-      data: { Datas: [] }
-    })
-  }
-  
+app.get('/api/fundsearch', async (req, res) => {
   try {
-    const url = `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeURIComponent(key)}`
-    const response = await axios.get(url, { timeout: 5000 })
+    const { m, key, _t } = req.query
+    const response = await axios.get('https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx', {
+      params: { m, key, _t },
+      timeout: 8000
+    })
     res.json(response.data)
   } catch (e) {
-    console.error('搜索基金失败:', e.message)
-    res.json({
-      code: -1,
-      message: '搜索失败: ' + e.message,
-      data: { Datas: [] }
-    })
+    console.error('基金搜索代理失败:', e.message)
+    res.json({ Datas: [] })
   }
 })
 
-app.get('/api/fund-detail/:code', async (req, res) => {
-  const { code } = req.params
-  
-  if (!code) {
-    return res.json({ code: -1, message: '请提供基金代码' })
-  }
-  
+app.get('/api/fundgz/:code.js', async (req, res) => {
   try {
-    const url = `https://fundgz.1234567.com.cn/js/${code}.js`
-    const response = await axios.get(url, { timeout: 5000 })
-    const text = response.data
-    const match = text.match(/jsonpgz\((.+)\)/)
-    if (match) {
-      const data = JSON.parse(match[1])
-      res.json(data)
-    } else {
-      res.json({ code: -1, message: '获取失败' })
-    }
+    const { code } = req.params
+    const response = await axios.get(`https://fundgz.1234567.com.cn/js/${code}.js`, {
+      timeout: 8000
+    })
+    res.send(response.data)
   } catch (e) {
-    console.error('获取基金详情失败:', e.message)
-    res.json({ code: -1, message: '获取失败: ' + e.message })
+    console.error('基金估值代理失败:', e.message)
+    res.send('jsonpgz({})')
+  }
+})
+
+app.get('/api/stockquotes', async (req, res) => {
+  try {
+    const codes = req.query
+    const queryString = Object.entries(codes).map(([k, v]) => `${k}=${v}`).join('&')
+    const response = await axios.get(`https://web.sqt.gtimg.cn/q=${queryString.replace('q=', '')}`, {
+      timeout: 8000
+    })
+    res.send(response.data)
+  } catch (e) {
+    console.error('股票行情代理失败:', e.message)
+    res.send('')
+  }
+})
+
+app.get('/api/fundholdings', async (req, res) => {
+  try {
+    const { type, code, topline, year, month } = req.query
+    const rt = Math.random().toFixed(16)
+    const url = `https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=${type}&code=${code}&topline=${topline}&year=${year}&month=${month}&rt=${rt}`
+    
+    const response = await axios.get(url, {
+      timeout: 8000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://fundf10.eastmoney.com/'
+      }
+    })
+    
+    res.send(response.data)
+  } catch (e) {
+    console.error('基金持仓代理失败:', e.message)
+    res.send('')
   }
 })
 
