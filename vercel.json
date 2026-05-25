@@ -2,8 +2,9 @@
   "rewrites": [
     { "source": "/api/fund-sectors", "destination": "/api/fund-sectors" },
     { "source": "/api/fund-holdings", "destination": "/api/fund-holdings" },
+    { "source": "/api/fund-period-returns", "destination": "/api/fund-period-returns" },
     { "source": "/api/fundsearch", "destination": "/api/fundsearch" },
-    { "source": "/api/fundgz", "destination": "/api/fundgz" },
+    { "source": "/api/fundgz/js/:code*", "destination": "/api/fundgz" },
     { "source": "/api/stockquotes", "destination": "/api/stockquotes" },
     { "source": "/api/fundholdings", "destination": "/api/fundholdings" },
     { "source": "/api", "destination": "/api/index" }

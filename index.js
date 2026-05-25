@@ -149,7 +149,7 @@ app.get('/', (req, res) => {
   res.json({ 
     name: '钱多多 API',
     version: '1.0.0',
-    endpoints: ['/api/fund-sectors', '/api/fund-holdings', '/api/fundsearch', '/api/fundgz', '/api/stockquotes', '/api/fundholdings']
+    endpoints: ['/api/fund-sectors', '/api/fund-holdings', '/api/fund-period-returns', '/api/fundsearch', '/api/fundgz', '/api/stockquotes', '/api/fundholdings']
   })
 })
 
@@ -167,11 +167,39 @@ app.get('/api/fundsearch', async (req, res) => {
   }
 })
 
-app.get('/api/fundgz/:code.js', async (req, res) => {
+app.get('/api/fundgz/js/:code.js', async (req, res) => {
   try {
     const { code } = req.params
     const response = await axios.get(`https://fundgz.1234567.com.cn/js/${code}.js`, {
-      timeout: 8000
+      timeout: 8000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://fund.eastmoney.com/',
+        'Accept': '*/*',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+      }
+    })
+    res.send(response.data)
+  } catch (e) {
+    console.error('基金估值代理失败:', e.message)
+    res.send('jsonpgz({})')
+  }
+})
+
+app.get('/api/fundgz', async (req, res) => {
+  try {
+    const { code } = req.query
+    if (!code) {
+      return res.send('jsonpgz({})')
+    }
+    const response = await axios.get(`https://fundgz.1234567.com.cn/js/${code}.js`, {
+      timeout: 8000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://fund.eastmoney.com/',
+        'Accept': '*/*',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+      }
     })
     res.send(response.data)
   } catch (e) {
@@ -309,7 +337,7 @@ async function getFundTopHoldings(fundCode) {
 
 app.post('/api/fund-holdings', async (req, res) => {
   const { code } = req.body
-  
+
   if (!code) {
     return res.json({
       code: -1,
@@ -317,10 +345,10 @@ app.post('/api/fund-holdings', async (req, res) => {
       data: null
     })
   }
-  
+
   try {
     const holdings = await getFundTopHoldings(code)
-    
+
     res.json({
       code: 0,
       message: '获取成功',
@@ -333,6 +361,30 @@ app.post('/api/fund-holdings', async (req, res) => {
       message: '获取失败: ' + e.message,
       data: null
     })
+  }
+})
+
+app.get('/api/fund-period-returns', async (req, res) => {
+  try {
+    const { code } = req.query
+    if (!code) {
+      return res.send('var apidata={ content:"" };')
+    }
+    const rt = Math.random().toFixed(16)
+    const url = `https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jdzf&code=${code}&rt=${rt}`
+
+    const response = await axios.get(url, {
+      timeout: 8000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://fundf10.eastmoney.com/'
+      }
+    })
+
+    res.send(response.data)
+  } catch (e) {
+    console.error('基金阶段涨幅代理失败:', e.message)
+    res.send('var apidata={ content:"" };')
   }
 })
 
