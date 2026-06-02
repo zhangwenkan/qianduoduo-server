@@ -1,3 +1,5 @@
+require('./env.js').loadEnvFile()
+
 const express = require('express')
 const cors = require('cors')
 const axios = require('axios')
@@ -7,6 +9,186 @@ const PORT = process.env.PORT || 3000
 
 app.use(cors())
 app.use(express.json())
+
+const isEmail = (email) => typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+
+const ok = (res, data = null, message = '成功') => res.json({ code: 0, message, ...(data === null ? {} : { data }) })
+const fail = (res, status, message) => res.status(status).json({ code: -1, message })
+
+const getSupabaseClient = (key) => {
+  const { createClient } = require('@supabase/supabase-js')
+  const url = process.env.SUPABASE_URL
+  if (!url || !key) {
+    throw new Error('缺少 Supabase 环境变量')
+  }
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  })
+}
+
+const createDefaultAuthService = () => ({
+  async sendOtp(email) {
+    const supabase = getSupabaseClient(process.env.SUPABASE_ANON_KEY)
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: true }
+    })
+    if (error) throw error
+  },
+  async verifyOtp(email, token) {
+    const supabase = getSupabaseClient(process.env.SUPABASE_ANON_KEY)
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'email'
+    })
+    if (error) throw error
+    return data
+  },
+  async getUserFromToken(token) {
+    const supabase = getSupabaseClient(process.env.SUPABASE_ANON_KEY)
+    const { data, error } = await supabase.auth.getUser(token)
+    if (error) throw error
+    return data.user
+  }
+})
+
+const createDefaultDataService = () => ({
+  async getAccountData(userId) {
+    const supabase = getSupabaseClient(process.env.SUPABASE_SERVICE_ROLE_KEY)
+    const { data, error } = await supabase
+      .from('user_data')
+      .select('holdings,notes,watchlist')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (error) throw error
+    return data || { holdings: [], notes: [], watchlist: [] }
+  },
+  async saveAccountData(userId, data) {
+    const supabase = getSupabaseClient(process.env.SUPABASE_SERVICE_ROLE_KEY)
+    const payload = {
+      user_id: userId,
+      holdings: Array.isArray(data.holdings) ? data.holdings : [],
+      notes: Array.isArray(data.notes) ? data.notes : [],
+      watchlist: Array.isArray(data.watchlist) ? data.watchlist : [],
+      updated_at: new Date().toISOString()
+    }
+    const { data: saved, error } = await supabase
+      .from('user_data')
+      .upsert(payload, { onConflict: 'user_id' })
+      .select('holdings,notes,watchlist')
+      .single()
+    if (error) throw error
+    return saved
+  }
+})
+
+const getBearerToken = (req) => {
+  const header = req.headers.authorization || ''
+  const match = header.match(/^Bearer\s+(.+)$/i)
+  return match ? match[1] : ''
+}
+
+const registerAccountRoutes = (targetApp, deps = {}) => {
+  const authService = deps.authService || createDefaultAuthService()
+  const dataService = deps.dataService || createDefaultDataService()
+
+  const requireUser = async (req, res, next) => {
+    try {
+      const token = getBearerToken(req)
+      if (!token) return fail(res, 401, '请先登录')
+      const user = await authService.getUserFromToken(token)
+      if (!user || !user.id) return fail(res, 401, '登录已失效')
+      req.user = user
+      next()
+    } catch (e) {
+      console.error('验证登录失败:', e.message)
+      fail(res, 401, '登录已失效')
+    }
+  }
+
+  targetApp.post('/api/auth/send-code', async (req, res) => {
+    try {
+      const email = String(req.body?.email || '').trim().toLowerCase()
+      if (!isEmail(email)) return fail(res, 400, '请输入正确的邮箱')
+      await authService.sendOtp(email)
+      ok(res, null, '验证码已发送')
+    } catch (e) {
+      console.error('发送验证码失败:', e.message)
+      if (/email address .* is invalid/i.test(e.message || '')) {
+        return fail(res, 400, '邮箱地址无效，请换一个真实邮箱')
+      }
+      if (/rate limit/i.test(e.message || '')) {
+        return fail(res, 429, '验证码发送太频繁，请稍后再试')
+      }
+      fail(res, 500, '发送验证码失败')
+    }
+  })
+
+  targetApp.post('/api/auth/verify-code', async (req, res) => {
+    try {
+      const email = String(req.body?.email || '').trim().toLowerCase()
+      const code = String(req.body?.code || '').trim()
+      if (!isEmail(email)) return fail(res, 400, '请输入正确的邮箱')
+      if (!/^\d{8}$/.test(code)) return fail(res, 400, '请输入 8 位验证码')
+      const { user, session } = await authService.verifyOtp(email, code)
+      ok(res, {
+        user: { id: user.id, email: user.email },
+        accessToken: session.access_token,
+        refreshToken: session.refresh_token,
+        expiresAt: session.expires_at
+      })
+    } catch (e) {
+      console.error('验证码登录失败:', e.message)
+      fail(res, 401, '验证码错误或已过期')
+    }
+  })
+
+  targetApp.get('/api/me/data', requireUser, async (req, res) => {
+    try {
+      const data = await dataService.getAccountData(req.user.id)
+      ok(res, {
+        holdings: data.holdings || [],
+        notes: data.notes || [],
+        watchlist: data.watchlist || []
+      })
+    } catch (e) {
+      console.error('获取账户数据失败:', e.message)
+      fail(res, 500, '获取账户数据失败')
+    }
+  })
+
+  targetApp.put('/api/me/data', requireUser, async (req, res) => {
+    try {
+      const data = await dataService.saveAccountData(req.user.id, {
+        holdings: req.body?.holdings,
+        notes: req.body?.notes,
+        watchlist: req.body?.watchlist
+      })
+      ok(res, {
+        holdings: data.holdings || [],
+        notes: data.notes || [],
+        watchlist: data.watchlist || []
+      })
+    } catch (e) {
+      console.error('保存账户数据失败:', e.message)
+      fail(res, 500, '保存账户数据失败')
+    }
+  })
+}
+
+registerAccountRoutes(app)
+
+const createApp = (deps = {}) => {
+  const testApp = express()
+  testApp.use(cors())
+  testApp.use(express.json())
+  registerAccountRoutes(testApp, deps)
+  return testApp
+}
 
 const STOCK_SECTOR_MAP = {
   '600519': '白酒', '000858': '白酒', '600809': '白酒', '000568': '白酒',
@@ -388,6 +570,15 @@ app.get('/api/fund-period-returns', async (req, res) => {
   }
 })
 
-app.listen(PORT, () => {
-  console.log(`钱多多后端服务运行在端口 ${PORT}`)
-})
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`钱多多后端服务运行在端口 ${PORT}`)
+  })
+}
+
+module.exports = {
+  app,
+  createApp
+}
+
+module.exports.default = app

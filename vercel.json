@@ -1,5 +1,9 @@
 {
   "rewrites": [
+    { "source": "/", "destination": "/api/root" },
+    { "source": "/api/auth/send-code", "destination": "/api/index" },
+    { "source": "/api/auth/verify-code", "destination": "/api/index" },
+    { "source": "/api/me/data", "destination": "/api/index" },
     { "source": "/api/fund-sectors", "destination": "/api/fund-sectors" },
     { "source": "/api/fund-holdings", "destination": "/api/fund-holdings" },
     { "source": "/api/fund-period-returns", "destination": "/api/fund-period-returns" },
